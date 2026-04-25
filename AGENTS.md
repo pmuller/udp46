@@ -34,6 +34,17 @@ ruby -e 'require "yaml"; ARGV.each { |f| YAML.load_file(f); puts f }' .github/wo
 
 Run `gofmt -w cmd internal` after Go edits.
 
+## Changelog Discipline
+
+Keep `CHANGELOG.md` current. Any user-visible behavior change, CLI flag change, metric/debug output change, packaging/release change, documentation-significant operational change, or bug fix must update the `[Unreleased]` section in the same commit.
+
+Before creating a release tag:
+
+- move relevant `[Unreleased]` entries into a versioned section such as `## [0.2.0] - YYYY-MM-DD`;
+- leave a fresh `[Unreleased]` section with `- No changes yet.`;
+- make sure `docs/release.md` still describes the actual workflow;
+- commit the changelog update before tagging.
+
 ## Networking And Concurrency Pitfalls
 
 These have already produced review findings; do not regress them:

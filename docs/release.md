@@ -4,6 +4,8 @@ Releases are tag-driven.
 
 ## Create A Release
 
+Before tagging, update `CHANGELOG.md`: move all relevant `[Unreleased]` entries into the target version section and commit that change.
+
 ```sh
 git tag vX.Y.Z
 git push origin vX.Y.Z
@@ -12,6 +14,8 @@ git push origin vX.Y.Z
 The release workflow runs tests, race tests, vet, formatting checks, builds cross-platform binaries, creates archives, writes checksums, and uploads artifacts to the GitHub Release.
 
 ## Create A Prerelease
+
+Before tagging, update `CHANGELOG.md` for the prerelease version.
 
 Use a semantic prerelease tag:
 
