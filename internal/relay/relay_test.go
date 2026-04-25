@@ -200,6 +200,7 @@ func TestGracefulShutdownClosesSessions(t *testing.T) {
 
 func startRelay(t *testing.T, cfg config.Config) (*Server, *metrics.Registry) {
 	t.Helper()
+	cfg = relayTestConfig(cfg)
 	reg := metrics.New(cfg.MetricsSessionLabels, nil)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := New(cfg, logger, reg)
@@ -212,6 +213,31 @@ func startRelay(t *testing.T, cfg config.Config) (*Server, *metrics.Registry) {
 	}
 	t.Cleanup(func() { stopRelay(t, srv) })
 	return srv, reg
+}
+
+func relayTestConfig(overrides config.Config) config.Config {
+	cfg := config.Default()
+	cfg.Listen = overrides.Listen
+	cfg.Upstream = overrides.Upstream
+	if overrides.SessionTimeout != 0 {
+		cfg.SessionTimeout = overrides.SessionTimeout
+	}
+	if overrides.ReadBufferSize != 0 {
+		cfg.ReadBufferSize = overrides.ReadBufferSize
+	}
+	if overrides.WriteTimeout != 0 {
+		cfg.WriteTimeout = overrides.WriteTimeout
+	}
+	if overrides.LogLevel != "" {
+		cfg.LogLevel = overrides.LogLevel
+	}
+	cfg.MetricsEnabled = overrides.MetricsEnabled
+	if overrides.MetricsListen != "" {
+		cfg.MetricsListen = overrides.MetricsListen
+	}
+	cfg.MetricsSessionLabels = overrides.MetricsSessionLabels
+	cfg.MaxSessions = overrides.MaxSessions
+	return cfg
 }
 
 func stopRelay(t *testing.T, srv *Server) {
