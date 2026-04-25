@@ -1,0 +1,13 @@
+pre-commit:
+  commands:
+    gofmt:
+      run: test -z "$(gofmt -l cmd internal)"
+    govet:
+      run: go vet ./...
+    gotest:
+      run: go test ./...
+
+pre-push:
+  commands:
+    gotest-race:
+      run: go test -race ./...

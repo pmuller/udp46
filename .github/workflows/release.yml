@@ -1,0 +1,167 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Formatting check
+        run: test -z "$(gofmt -l cmd internal)"
+
+      - name: Test
+        run: go test ./...
+
+      - name: Race test
+        run: go test -race ./...
+
+      - name: Vet
+        run: go vet ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: linux
+            goarch: arm
+            goarm: "7"
+          - goos: freebsd
+            goarch: amd64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build archive
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          date_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          suffix="${GOOS}_${GOARCH}"
+          if [ -n "${GOARM:-}" ]; then suffix="${suffix}_v${GOARM}"; fi
+          name="udp46_${VERSION}_${suffix}"
+          mkdir -p "dist/${name}"
+          go build -trimpath -ldflags "-s -w -X github.com/pmuller/udp46/internal/build.Version=${VERSION} -X github.com/pmuller/udp46/internal/build.Commit=${COMMIT} -X github.com/pmuller/udp46/internal/build.Date=${date_utc}" -o "dist/${name}/udp46" ./cmd/udp46
+          cp README.md "dist/${name}/README.md"
+          cp LICENSE "dist/${name}/LICENSE"
+          cp -R docs "dist/${name}/docs"
+          tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: udp46-${{ matrix.goos }}-${{ matrix.goarch }}-${{ matrix.goarm }}
+          path: dist/*.tar.gz
+
+  packages:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build Linux packages
+        shell: bash
+        env:
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          pkg_version="${VERSION#v}"
+          date_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          for arch in amd64 arm64; do
+            work="dist/pkg/udp46_${pkg_version}_linux_${arch}"
+            install -d "${work}/usr/bin" "${work}/usr/share/doc/udp46" "${work}/DEBIAN"
+            GOOS=linux GOARCH="${arch}" go build -trimpath -ldflags "-s -w -X github.com/pmuller/udp46/internal/build.Version=${VERSION} -X github.com/pmuller/udp46/internal/build.Commit=${COMMIT} -X github.com/pmuller/udp46/internal/build.Date=${date_utc}" -o "${work}/usr/bin/udp46" ./cmd/udp46
+            cp README.md "${work}/usr/share/doc/udp46/README.md"
+            cp LICENSE "${work}/usr/share/doc/udp46/LICENSE"
+            cp -R docs "${work}/usr/share/doc/udp46/docs"
+            deb_arch="${arch}"
+            if [ "${arch}" = "amd64" ]; then deb_arch="amd64"; fi
+            if [ "${arch}" = "arm64" ]; then deb_arch="arm64"; fi
+            cat > "${work}/DEBIAN/control" <<EOF
+          Package: udp46
+          Version: ${pkg_version}
+          Section: net
+          Priority: optional
+          Architecture: ${deb_arch}
+          Maintainer: udp46 maintainers
+          Description: Payload-blind IPv4-to-IPv6 UDP relay
+          EOF
+            dpkg-deb --build "${work}" "dist/udp46_${pkg_version}_linux_${arch}.deb"
+          done
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: udp46-linux-packages
+          path: dist/*.deb
+
+  publish:
+    needs: [build, packages]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum * > udp46_checksums.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: dist/*
